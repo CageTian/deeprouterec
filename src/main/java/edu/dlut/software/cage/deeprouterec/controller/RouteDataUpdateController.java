@@ -51,7 +51,7 @@ public class RouteDataUpdateController {
             //todo
             System.out.println("haha");
         } else {
-            routeDataUpdateService.putCityTickets(city);
+            routeDataUpdateService.put30DaysCityTickets(city);
         }
         return new ResponseEntity<>(HttpStatus.OK);
     }

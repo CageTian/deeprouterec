@@ -5,14 +5,15 @@ import lombok.Data;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.redis.core.index.Indexed;
 import java.util.Map;
+import java.util.Set;
 
 @Data
 @Builder
 @Document(collection = "train_tickets")
 public class TicketsDataMongo {
-    private String terminal;
     @Indexed
     private String now_date;
+    private String terminal;
     private String search_date;
-    private Map<String, TicketsInfoMongo> ticket_info;
+    private Set<TicketsInfoMongo> ticket_info;
 }

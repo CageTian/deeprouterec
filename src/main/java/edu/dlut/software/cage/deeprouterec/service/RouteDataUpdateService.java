@@ -12,7 +12,6 @@ import org.jsoup.Jsoup;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-
 import java.io.IOException;
 import java.time.LocalDate;
 import java.util.*;
@@ -108,33 +107,8 @@ public class RouteDataUpdateService {
         }
     }
 
-//    public void putTrains() throws IOException {
-//        String doc = Jsoup.connect(Constants.TRA_URL).get().text();
-//
-//
-//        String pattern = "\"station_train_code\":\"(.*?)\"";
-//        Pattern r = Pattern.compile(pattern);
-//        Matcher m = r.matcher(doc);
-//        while(m.find()) {
-//
-//            String[] tmp = m.group(1).split("\\(|\\)|-");
-//            if(tmp.length != 3) {
-//                throw new ExceptionInInitializerError("error train_list.js format" + m.group());
-//            }
-//            TrainDataRedis trainDataRedis = TrainDataRedis.builder()
-//                    .station_train_code(tmp[0])
-//                    .start(tmp[1])
-//                    .terminal(tmp[2])
-//                    .build();
-//            log.info(trainDataRedis.toString());
-//            repository.putTrainsInfo(Constants.TRA_PREFIX + tmp[0], trainDataRedis);
-//
-//        }
-//
-//    }
-
     public void putTrains() throws IOException {
-        String doc = Jsoup.connect(Constants.TRA_URL).maxBodySize(50*1024*1024).get().text();
+        String doc = Jsoup.connect(Constants.TRA_URL).maxBodySize(50 * 1024 * 1024).get().text();
         doc = doc.replaceFirst("var train_list =", "");
 
 //        System.out.println(doc);
@@ -161,11 +135,54 @@ public class RouteDataUpdateService {
 
     }
 
-    public void putTickets(int days, String city) {
-//        getRestTickets(localDate, start, city)
+    // 插入当前日期，cityName下未来30天的的所有列车的余票数据
+    public void put30DaysCityTickets(String cityName) {
+        String now_date = LocalDate.now().toString();
+        LocalDate date = LocalDate.now();
+        List<TicketsDataMongo> ticketsDataMongoList = new ArrayList<>();
+        for (int i = 1; i < 30; i++) {
+            TicketsDataMongo ticketsData = TicketsDataMongo.builder()
+                    .now_date(now_date)
+                    .search_date(date.toString())
+                    .terminal(cityName)
+                    .build();
+            ticketsData.setTicket_info(getAllTrainTickets(ticketsData));
+            ticketsDataMongoList.add(ticketsData);
+            date = date.plusDays(1);
+        }
+        mongoTicketsDataRepository.batchInsert(ticketsDataMongoList);
     }
 
-    private Map<String, TicketsInfoMongo> getRestTickets(String date, String start, String terminal) throws IOException {
+    // 获得指定日期终点的所有列车的余票信息
+    private Set<TicketsInfoMongo> getAllTrainTickets(TicketsDataMongo ticketsDataMongo) {
+        Set<String> stationKeys = new HashSet<>();
+        Set<TicketsInfoMongo> res = new HashSet<>();
+        Set<String> startStationName = getAllStartStations(ticketsDataMongo.getTerminal());
+        //合并多个起始站点列车余票信息
+        startStationName.forEach(start -> {
+            Set<TicketsInfoMongo> tmp = new HashSet<>();
+            try {
+                tmp = getRestTickets(ticketsDataMongo.getSearch_date(),
+                        name2Code(start), name2Code(ticketsDataMongo.getTerminal()));
+
+            } catch (IOException e) {
+                //todo
+                e.printStackTrace();
+            }
+            tmp.forEach(data -> {
+                if (!stationKeys.contains(data.getTrainId())) {
+                    res.add(data);
+                    stationKeys.add(data.getTrainId());
+                } else {
+                    //todo:票数多优先？
+                }
+            });
+        });
+        return res;
+    }
+
+    //获得指定日期起点终点的列车余票信息
+    private Set<TicketsInfoMongo> getRestTickets(String date, String start, String terminal) throws IOException {
         String doc = Jsoup.connect(Constants.TIC_API_URL).ignoreContentType(true)
                 .header("Accept", "*/*")
                 .header("Accept-Encoding", "gzip, deflate, br")
@@ -180,7 +197,7 @@ public class RouteDataUpdateService {
                 .data("purpose_codes", "ADULT").get().text();
         log.info(doc);
         JSONObject jsonObject = JSON.parseObject(doc);
-        if(jsonObject.isEmpty() || !jsonObject.containsKey("data")) {
+        if (jsonObject.isEmpty() || !jsonObject.containsKey("data")) {
             log.error("error response of {}, {}, {}, detail:{}", date, start, terminal, doc);
         }
         jsonObject = jsonObject.getJSONObject("data");
@@ -188,7 +205,7 @@ public class RouteDataUpdateService {
         if (!httpStatus.equals("1")) {
             log.error(date + ", start: " + start + " terminal: " + terminal + " flag error: " + doc);
         }
-        Map<String, TicketsInfoMongo> res = new HashMap<>();
+        Set<TicketsInfoMongo> res = new HashSet<>();
         jsonObject.getJSONArray("result").forEach(a -> {
 //            log.info("ticket:" + a.toString());
             String[] train = a.toString().split("\\|");
@@ -215,83 +232,105 @@ public class RouteDataUpdateService {
                     .start(train[6])
                     .restTickets(sum).build();
 //            log.info(tic.toString());
-            res.put(train[3], tic);
+            res.add(tic);
         });
         return res;
     }
 
-    public List<TicketsDataMongo> getAllPassbyTicketInfo(String cityName) {
+    // 站点名称转换三字码
+    private String name2Code(String cityName) {
+        return repository.getStationCodeByName(cityName).getCityCode();
+    }
+
+    // 获取所有起始站点名称，并去重
+    private Set<String> getAllStartStations(String cityName) {
         TrainPassbyDataRedis trainPassbyDataRedis = repository.getPassBy(cityName);
+        Set<String> startNameSet = new HashSet<>();
         if (trainPassbyDataRedis == null) {
             log.error("trainPassbyDataRedis == null");
-            return null;
+            return startNameSet;
         }
-        String cityCode = trainPassbyDataRedis.getCityCode();
-        Map<String, Map<String, TicketsInfoMongo>> ticInfo = new HashMap<>();
-        LocalDate date = LocalDate.now();
-        for (int i = 1; i < 30; i++) {
-            ticInfo.put(date.toString(), new HashMap<>());
-            date = date.plusDays(1);
-        }
-        Set<String> startNameSet = new HashSet<>();
         trainPassbyDataRedis.getTrain_passing_by().forEach(train -> {
             TrainDataRedis trainDataRedis = repository.getStartByTrainId(train);
             if (trainDataRedis == null) {
                 log.error(train + "repository.getStartByTrainId == null");
                 return;
             }
-
             // repeat start station name check.
             String startName = trainDataRedis.getStart();
-            if (startNameSet.contains(startName)) {
-                return;
-            } else {
+            if (!startNameSet.contains(startName)) {
                 startNameSet.add(startName);
             }
-
-            // update no repeated routes for 30 days.
-            ticInfo.forEach((tk, tv) -> {
-                Map<String, TicketsInfoMongo> ticketsInfoMongos;
-                try {
-                    String startCode = repository.getStationCodeByName(startName).getCityCode();
-                    ticketsInfoMongos = getRestTickets(tk, startCode, cityCode);
-                } catch (IOException e) {
-                    log.error("getRestTickets erro:,date={}, start={}, terminal={}, detail:{}", tk,
-                            startName, cityName, e.getMessage());
-                    return;
-                }
-                ticketsInfoMongos.forEach((ik, iv) -> {
-                    if (!tv.containsKey(ik) || iv.getRestTickets() < tv.get(ik).getRestTickets()) {
-                        tv.put(ik, iv);
-                    }
-                });
-//                tv.putAll(ticketsInfoMongos);
-            });
-
         });
-
-        String now_date = LocalDate.now().toString();
-        StringBuffer stringBuffer = new StringBuffer("29 days data size:");
-        List<TicketsDataMongo> res = new ArrayList<>();
-        for (Map.Entry<String, Map<String, TicketsInfoMongo>> entry : ticInfo.entrySet()) {
-            TicketsDataMongo tic = TicketsDataMongo.builder()
-                    .search_date(entry.getKey())
-                    .now_date(now_date)
-                    .ticket_info(entry.getValue())
-                    .terminal(cityName)
-                    .build();
-            stringBuffer.append(tic.getTicket_info().size()).append("|");
-            res.add(tic);
-        }
-        stringBuffer.append("start station name:");
-        startNameSet.forEach(name -> stringBuffer.append(name).append("|"));
-        log.info("mango size:{}, {}", res.size(), stringBuffer.toString());
-        return res;
+        return startNameSet;
     }
-
-    public void putCityTickets(String cityName) {
-        List<TicketsDataMongo> tickets = getAllPassbyTicketInfo(cityName);
-        mongoTicketsDataRepository.batchInsert(tickets);
-    }
-
+//    // 获得所有余票信息
+//    public List<TicketsDataMongo> getAllPassbyTicketInfo(String cityName) {
+//        TrainPassbyDataRedis trainPassbyDataRedis = repository.getPassBy(cityName);
+//        if (trainPassbyDataRedis == null) {
+//            log.error("trainPassbyDataRedis == null");
+//            return null;
+//        }
+//        String cityCode = trainPassbyDataRedis.getCityCode();
+//        Map<String, Map<String, TicketsInfoMongo>> ticInfo = new HashMap<>();
+//        LocalDate date = LocalDate.now();
+//        for (int i = 1; i < 30; i++) {
+//            ticInfo.put(date.toString(), new HashMap<>());
+//            date = date.plusDays(1);
+//        }
+//        // 获取所有起始站点名称，并去重
+//        Set<String> startNameSet = new HashSet<>();
+//        trainPassbyDataRedis.getTrain_passing_by().forEach(train -> {
+//            TrainDataRedis trainDataRedis = repository.getStartByTrainId(train);
+//            if (trainDataRedis == null) {
+//                log.error(train + "repository.getStartByTrainId == null");
+//                return;
+//            }
+//            // repeat start station name check.
+//            String startName = trainDataRedis.getStart();
+//            if (startNameSet.contains(startName)) {
+//                return;
+//            } else {
+//                startNameSet.add(startName);
+//            }
+//
+//            // update no repeated routes for 30 days.
+//            ticInfo.forEach((tk, tv) -> {
+//                Map<String, TicketsInfoMongo> ticketsInfoMongos;
+//                try {
+//                    String startCode = repository.getStationCodeByName(startName).getCityCode();
+//                    ticketsInfoMongos = getRestTickets(tk, startCode, cityCode);
+//                } catch (IOException e) {
+//                    log.error("getRestTickets erro:,date={}, start={}, terminal={}, detail:{}", tk,
+//                            startName, cityName, e.getMessage());
+//                    return;
+//                }
+//                ticketsInfoMongos.forEach((ik, iv) -> {
+//                    if (!tv.containsKey(ik) || iv.getRestTickets() < tv.get(ik).getRestTickets()) {
+//                        tv.put(ik, iv);
+//                    }
+//                });
+////                tv.putAll(ticketsInfoMongos);
+//            });
+//
+//        });
+//
+//        String now_date = LocalDate.now().toString();
+//        StringBuffer stringBuffer = new StringBuffer("29 days data size:");
+//        List<TicketsDataMongo> res = new ArrayList<>();
+//        for (Map.Entry<String, Map<String, TicketsInfoMongo>> entry : ticInfo.entrySet()) {
+//            TicketsDataMongo tic = TicketsDataMongo.builder()
+//                    .search_date(entry.getKey())
+//                    .now_date(now_date)
+//                    .ticket_info(entry.getValue())
+//                    .terminal(cityName)
+//                    .build();
+//            stringBuffer.append(tic.getTicket_info().size()).append("|");
+//            res.add(tic);
+//        }
+//        stringBuffer.append("start station name:");
+//        startNameSet.forEach(name -> stringBuffer.append(name).append("|"));
+//        log.info("mango size:{}, {}", res.size(), stringBuffer.toString());
+//        return res;
+//    }
 }
