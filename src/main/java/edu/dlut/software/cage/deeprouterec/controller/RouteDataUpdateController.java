@@ -8,12 +8,12 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-
 import java.io.IOException;
 
 @RestController
 @Slf4j
 public class RouteDataUpdateController {
+
     private RouteDataUpdateService routeDataUpdateService;
 
     @Autowired
@@ -61,12 +61,12 @@ public class RouteDataUpdateController {
             @RequestParam(name = "city", required = false,
                     defaultValue = "all") String city
     ) {
+        HttpStatus status = HttpStatus.OK;
         if (city.equals("all")) {
             routeDataUpdateService.putPassByBatch();
         } else {
-            routeDataUpdateService.putPassBy(city);
+            status = routeDataUpdateService.putPassBy(city);
         }
-        return new ResponseEntity<>(HttpStatus.OK);
+        return new ResponseEntity<>(status);
     }
-
 }

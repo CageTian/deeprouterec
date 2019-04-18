@@ -14,5 +14,4 @@ import java.util.Set;
 public class TrainPassbyDataRedis {
     private String cityCode;
     private Set<String> train_passing_by;
-
 }

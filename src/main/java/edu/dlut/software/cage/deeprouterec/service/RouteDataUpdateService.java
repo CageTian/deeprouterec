@@ -10,6 +10,7 @@ import edu.dlut.software.cage.deeprouterec.repository.RouteStationDataRepository
 import lombok.extern.slf4j.Slf4j;
 import org.jsoup.Jsoup;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -45,14 +46,14 @@ public class RouteDataUpdateService {
         stations.forEach(s -> putPassBy(s.replaceFirst(Constants.STA_PREFIX, "")));
     }
 
-    public void putPassBy(String city) {
+    public HttpStatus putPassBy(String city) {
         if (city.isEmpty())
             throw new MissingFormatArgumentException("city is empty");
-        String doc = "";
-        StationDataRedis stations = repository.getStationCodeByName(Constants.STA_PREFIX + city);
+        String doc;
+        StationDataRedis stations = repository.getStationCodeByName(city);
         if (stations == null) {
             log.error("cityname: [" + city + "] can not find");
-            return;
+            return HttpStatus.BAD_GATEWAY;
         }
         String citycode = stations.getCityCode();
         try {
@@ -71,7 +72,7 @@ public class RouteDataUpdateService {
                     .data("train_station_code", citycode).post().text();
         } catch (IOException e) {
             log.error("cityname: [" + city + "] " + e.getMessage());
-            return;
+            return HttpStatus.ACCEPTED;
         }
         JSONObject jsonObject = JSON.parseObject(doc);
         int httpStatus = jsonObject.getInteger("httpstatus");
@@ -82,6 +83,7 @@ public class RouteDataUpdateService {
         jsonObject.getJSONArray("data").forEach(a -> collection.add((String) a));
         log.info(city + " size of pass by: " + collection.size());
         repository.putPassBy(Constants.PAS_PREFIX + city, new TrainPassbyDataRedis(citycode, collection));
+        return HttpStatus.OK;
     }
 
     public void putStations() throws IOException {
@@ -163,12 +165,7 @@ public class RouteDataUpdateService {
 //        getRestTickets(localDate, start, city)
     }
 
-    /**
-     * @param date     YYYY-MM-DD
-     * @param start
-     * @param terminal
-     */
-    public Map<String, TicketsInfoMongo> getRestTickets(String date, String start, String terminal) throws IOException {
+    private Map<String, TicketsInfoMongo> getRestTickets(String date, String start, String terminal) throws IOException {
         String doc = Jsoup.connect(Constants.TIC_API_URL).ignoreContentType(true)
                 .header("Accept", "*/*")
                 .header("Accept-Encoding", "gzip, deflate, br")
@@ -219,7 +216,6 @@ public class RouteDataUpdateService {
                     .restTickets(sum).build();
 //            log.info(tic.toString());
             res.put(train[3], tic);
-
         });
         return res;
     }

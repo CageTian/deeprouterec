@@ -13,6 +13,4 @@ public class MongoTemplateConfig {
     public MongoClientFactoryBean mongo() {
         return new MongoClientFactoryBean();
     }
-
-
 }

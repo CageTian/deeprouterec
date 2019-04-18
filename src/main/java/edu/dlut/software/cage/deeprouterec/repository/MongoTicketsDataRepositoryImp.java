@@ -6,11 +6,11 @@ import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Repository;
-
 import java.util.List;
 
 @Repository
 public class MongoTicketsDataRepositoryImp implements MongoTicketsDataRepository {
+
     private MongoTemplate mongoTemplate;
 
     @Autowired
@@ -18,15 +18,13 @@ public class MongoTicketsDataRepositoryImp implements MongoTicketsDataRepository
         this.mongoTemplate = mongoTemplate;
     }
 
-
     @Override
     public void batchInsert(List<TicketsDataMongo> ticketsDataMongo) {
-        mongoTemplate.insert(ticketsDataMongo,TicketsDataMongo.class);
+        mongoTemplate.insert(ticketsDataMongo, TicketsDataMongo.class);
     }
 
     @Override
     public void batchUpdate(List<TicketsDataMongo> ticketsDataMongo) {
-
     }
 
     @Override
