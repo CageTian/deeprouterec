@@ -3,18 +3,22 @@ package edu.dlut.software.cage.deeprouterec.controller;
 import edu.dlut.software.cage.deeprouterec.service.RouteDataUpdateService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import java.io.IOException;
+import java.util.List;
 
 @RestController
 @Slf4j
 public class RouteDataUpdateController {
 
     private RouteDataUpdateService routeDataUpdateService;
+    @Value("#{'${station.cities}'.split(',')}")
+    private List<String> cityNameList;
 
     @Autowired
     public RouteDataUpdateController(RouteDataUpdateService routeDataUpdateService) {
@@ -48,8 +52,7 @@ public class RouteDataUpdateController {
             @RequestParam(name = "city", required = false) String city
     ) {
         if (city.equals("all")) {
-            //todo
-            System.out.println("haha");
+            cityNameList.forEach(routeDataUpdateService::put30DaysCityTickets);
         } else {
             routeDataUpdateService.put30DaysCityTickets(city);
         }
@@ -63,7 +66,8 @@ public class RouteDataUpdateController {
     ) {
         HttpStatus status = HttpStatus.OK;
         if (city.equals("all")) {
-            routeDataUpdateService.putPassByBatch();
+            cityNameList.forEach(routeDataUpdateService::putPassBy);
+//            routeDataUpdateService.putPassByBatch();
         } else {
             status = routeDataUpdateService.putPassBy(city);
         }

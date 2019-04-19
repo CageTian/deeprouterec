@@ -11,4 +11,5 @@ public class TicketsInfoMongo {
     private String trainId;
     private String start;
     private int restTickets;
+    private int totalTickets;
 }

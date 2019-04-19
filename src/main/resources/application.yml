@@ -11,7 +11,8 @@ server:
     context-path: /deeprouterec
 logging:
   level:
-   com.example.demo1: TRACE
-
+   edu.dlut.software.cage.deeprouterec: DEBUG
 station:
-  cities: [丽江]
+  cities: 大连,北京,济南,上海,武汉,西安,重庆,成都,昆明,贵阳,南宁,广州,长沙,厦门,三亚,杭州,南京,哈尔滨,长春,沈阳
+my_properties:
+  request_gap: 100

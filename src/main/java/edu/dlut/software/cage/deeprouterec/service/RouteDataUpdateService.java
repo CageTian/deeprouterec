@@ -10,8 +10,8 @@ import edu.dlut.software.cage.deeprouterec.repository.RouteStationDataRepository
 import lombok.extern.slf4j.Slf4j;
 import org.jsoup.Jsoup;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
-import org.springframework.retry.annotation.Recover;
 import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
 import java.io.IOException;
@@ -24,8 +24,11 @@ import java.util.stream.Collectors;
 @Service
 @Slf4j
 public class RouteDataUpdateService {
+
     private RouteStationDataRepository repository;
     private MongoTicketsDataRepository mongoTicketsDataRepository;
+    @Value("${my_properties.request_gap}")
+    private long requestGap;
 
     @Autowired
     public RouteDataUpdateService(RouteStationDataRepository repository,
@@ -164,11 +167,10 @@ public class RouteDataUpdateService {
             try {
                 tmp = getRestTickets(ticketsDataMongo.getSearch_date(),
                         name2Code(start), name2Code(ticketsDataMongo.getTerminal()));
-            } catch (IOException e) {
-                //todo
+                Thread.sleep(requestGap);
+            } catch (Exception e) {
                 log.error("getRestTickets erro:,date={}, start={}, terminal={}, detail:{}",
                         ticketsDataMongo.getSearch_date(), start, ticketsDataMongo.getTerminal(), e.getMessage());
-//                e.printStackTrace();
             }
             tmp.forEach(data -> {
                 if (!stationKeys.contains(data.getTrainId())) {
@@ -180,13 +182,15 @@ public class RouteDataUpdateService {
             });
         });
         StringBuffer stringBuffer = new StringBuffer();
-        res.forEach(s  -> stringBuffer.append("|").append(s.getTrainId()).append(":").append(s.getRestTickets()));
-        log.info("train tickets--" + res.size() + ":" + stringBuffer.toString());
+        res.forEach(s -> stringBuffer.append("|").append(s.getTrainId()).append(":")
+                .append(s.getRestTickets()).append("/").append(s.getTotalTickets()));
+        log.debug(ticketsDataMongo.getSearch_date() + ":" + ticketsDataMongo.getTerminal()
+                + res.size() + "," + stringBuffer.toString());
         return res;
     }
 
     //获得指定日期起点终点的列车余票信息
-    @Retryable(value= {IOException.class})
+    @Retryable(value = {IOException.class})
     private Set<TicketsInfoMongo> getRestTickets(String date, String start, String terminal) throws IOException {
         String doc = Jsoup.connect(Constants.TIC_API_URL).ignoreContentType(true)
                 .header("Accept", "*/*")
@@ -200,7 +204,7 @@ public class RouteDataUpdateService {
                 .data("leftTicketDTO.from_station", start)
                 .data("leftTicketDTO.to_station", terminal)
                 .data("purpose_codes", "ADULT").get().text();
-        log.info(doc);
+        log.trace(doc);
         JSONObject jsonObject = JSON.parseObject(doc);
         if (jsonObject.isEmpty() || !jsonObject.containsKey("data")) {
             log.error("error response of {}, {}, {}, detail:{}", date, start, terminal, doc);
@@ -212,31 +216,36 @@ public class RouteDataUpdateService {
         }
         Set<TicketsInfoMongo> res = new HashSet<>();
         jsonObject.getJSONArray("result").forEach(a -> {
-//            log.info("ticket:" + a.toString());
             String[] train = a.toString().split("\\|");
             if (train.length != 39) {
                 log.warn("error length:{}", a.toString());
                 return;
             }
-            int sum = 0;
+            int rest = 0;
+            int total = 0;
             for (int i = 21; i <= 32; i++) {
                 switch (train[i]) {
                     case "":
-                    case "无":
                         break;
+                    case "无":
+                        total += Constants.HAVE_TICKETS;
                     case "有":
                     case "*":
-                        sum += Constants.HAVE_TICKETS;
+                        rest += Constants.HAVE_TICKETS;
+                        total += Constants.HAVE_TICKETS;
                         break;
                     default:
-                        sum += Integer.valueOf(train[i]);
+                        rest += Integer.valueOf(train[i]);
+                        total += Constants.HAVE_TICKETS;
                 }
             }
             TicketsInfoMongo tic = TicketsInfoMongo.builder()
                     .trainId(train[3])
                     .start(train[6])
-                    .restTickets(sum).build();
-            log.info(tic.toString());
+                    .restTickets(rest)
+                    .totalTickets(total)
+                    .build();
+            log.trace(tic.toString());
             res.add(tic);
         });
         return res;
@@ -266,8 +275,8 @@ public class RouteDataUpdateService {
             startNameSet.add(startName);
         });
         StringBuffer stringBuffer = new StringBuffer();
-        startNameSet.forEach(s  -> stringBuffer.append("|").append(s));
-        log.info(startNameSet.size() + ":" + stringBuffer.toString());
+        startNameSet.forEach(s -> stringBuffer.append("|").append(s));
+        log.trace("getAllStartStations:size" + startNameSet.size() + ":" + stringBuffer.toString());
         return startNameSet;
     }
 //    // 获得所有余票信息
