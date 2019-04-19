@@ -11,6 +11,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.jsoup.Jsoup;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
+import org.springframework.retry.annotation.Recover;
+import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.time.LocalDate;
@@ -131,8 +133,6 @@ public class RouteDataUpdateService {
                 });
             });
         });
-
-
     }
 
     // 插入当前日期，cityName下未来30天的的所有列车的余票数据
@@ -164,10 +164,11 @@ public class RouteDataUpdateService {
             try {
                 tmp = getRestTickets(ticketsDataMongo.getSearch_date(),
                         name2Code(start), name2Code(ticketsDataMongo.getTerminal()));
-
             } catch (IOException e) {
                 //todo
-                e.printStackTrace();
+                log.error("getRestTickets erro:,date={}, start={}, terminal={}, detail:{}",
+                        ticketsDataMongo.getSearch_date(), start, ticketsDataMongo.getTerminal(), e.getMessage());
+//                e.printStackTrace();
             }
             tmp.forEach(data -> {
                 if (!stationKeys.contains(data.getTrainId())) {
@@ -178,10 +179,14 @@ public class RouteDataUpdateService {
                 }
             });
         });
+        StringBuffer stringBuffer = new StringBuffer();
+        res.forEach(s  -> stringBuffer.append("|").append(s.getTrainId()).append(":").append(s.getRestTickets()));
+        log.info("train tickets--" + res.size() + ":" + stringBuffer.toString());
         return res;
     }
 
     //获得指定日期起点终点的列车余票信息
+    @Retryable(value= {IOException.class})
     private Set<TicketsInfoMongo> getRestTickets(String date, String start, String terminal) throws IOException {
         String doc = Jsoup.connect(Constants.TIC_API_URL).ignoreContentType(true)
                 .header("Accept", "*/*")
@@ -231,7 +236,7 @@ public class RouteDataUpdateService {
                     .trainId(train[3])
                     .start(train[6])
                     .restTickets(sum).build();
-//            log.info(tic.toString());
+            log.info(tic.toString());
             res.add(tic);
         });
         return res;
@@ -258,10 +263,11 @@ public class RouteDataUpdateService {
             }
             // repeat start station name check.
             String startName = trainDataRedis.getStart();
-            if (!startNameSet.contains(startName)) {
-                startNameSet.add(startName);
-            }
+            startNameSet.add(startName);
         });
+        StringBuffer stringBuffer = new StringBuffer();
+        startNameSet.forEach(s  -> stringBuffer.append("|").append(s));
+        log.info(startNameSet.size() + ":" + stringBuffer.toString());
         return startNameSet;
     }
 //    // 获得所有余票信息
