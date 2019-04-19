@@ -1,0 +1,17 @@
+spring:
+  data:
+    mongodb:
+      uri: mongodb://127.0.0.1:27017/routedata
+  redis:
+    host: localhost
+    jedis.pool.max-active: 8
+    port: 6379
+server:
+  servlet:
+    context-path: /deeprouterec
+logging:
+  level:
+   com.example.demo1: TRACE
+
+station:
+  cities: [丽江]
