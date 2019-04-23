@@ -14,6 +14,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
+
 import java.io.IOException;
 import java.time.LocalDate;
 import java.util.*;
@@ -267,7 +268,7 @@ public class RouteDataUpdateService {
         trainPassbyDataRedis.getTrain_passing_by().forEach(train -> {
             TrainDataRedis trainDataRedis = repository.getStartByTrainId(train);
             if (trainDataRedis == null) {
-                log.error(train + "repository.getStartByTrainId == null");
+                log.error(train + ": repository.getStartByTrainId == null");
                 return;
             }
             // repeat start station name check.
